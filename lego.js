@@ -6,30 +6,15 @@
  */
 exports.isStar = true;
 
-function isPropertyValid(property) {
-    var validProperties = ['name', 'age', 'gender', 'email', 'phone', 'favoriteFruit'];
-
-    return validProperties.includes(property);
-}
-
-function intersect(a, b) {
-    var i;
-    var helperObj = {};
-    for (i = 0; i < b.length; i++) {
-        helperObj[b[i]] = true;
-    }
-
-    var result = [];
-    var value;
-    for (i = 0; i < a.length; i++) {
-        value = a[i];
-        if (value in helperObj) {
-            result.push(value);
-        }
-    }
-
-    return result;
-}
+var QUERY_PRIORITY = {
+    filterIn: 0,
+    sortBy: 1,
+    or: 1,
+    and: 1,
+    select: 2,
+    limit: 3,
+    format: 4
+};
 
 /**
  * Запрос к коллекции
@@ -38,59 +23,18 @@ function intersect(a, b) {
  * @returns {Array}
  */
 exports.query = function (collection) {
-    var queries = [].slice.call(arguments, 1);
     var result = collection.map(function (entry) {
         return Object.assign({}, entry);
     });
+    var queries = [].slice.call(arguments, 1);
 
-    if (collection.length === 0) {
-        return result;
-    }
-
-    var select;
-    var limit = collection.length;
-    var format = {};
-    var queryResult;
-    queries.forEach(function (query) {
-        queryResult = query(result);
-
-        if (queryResult.select && queryResult.select.length !== 0) {
-            if (select) {
-                select = intersect(select, queryResult.select);
-            } else {
-                select = queryResult.select;
-            }
-        }
-
-        if (queryResult.limit) {
-            limit = queryResult.limit;
-        }
-
-        if (queryResult.format) {
-            format[queryResult.format.property] = queryResult.format.formatter;
-        }
-
-        result = queryResult.entries;
-    });
-
-    if (select) {
-        result.forEach(function (entry) {
-            for (var key in entry) {
-                if (!select.includes(key)) {
-                    delete entry[key];
-                }
-            }
+    queries
+        .sort(function (a, b) {
+            return a.priority > b.priority;
+        })
+        .forEach(function (query) {
+            result = query(result);
         });
-    }
-
-    result.splice(limit);
-
-    var fmtKeys = Object.keys(format);
-    fmtKeys.forEach(function (key) {
-        result.forEach(function (entry) {
-            entry[key] = format[key](entry[key]);
-        });
-    });
 
     return result;
 };
@@ -101,16 +45,24 @@ exports.query = function (collection) {
  * @returns {Function}
  */
 exports.select = function () {
-    var selected = [].slice.call(arguments);
+    var props = [].slice.call(arguments);
 
-    return function (entries) {
-        return {
-            select: selected.filter(function (prop) {
-                return isPropertyValid(prop);
-            }),
-            entries: entries
-        };
+    var select = function (entries) {
+        return entries.map(function (entry) {
+            var result = {};
+
+            props.forEach(function (prop) {
+                if (entry.hasOwnProperty(prop)) {
+                    result[prop] = entry[prop];
+                }
+            });
+
+            return result;
+        });
     };
+    select.priority = QUERY_PRIORITY[select.name];
+
+    return select;
 };
 
 /**
@@ -120,17 +72,14 @@ exports.select = function () {
  * @returns {Function}
  */
 exports.filterIn = function (property, values) {
-    return function (entries) {
-        for (var i = entries.length - 1; i >= 0; i--) {
-            if (!values.includes(entries[i][property])) {
-                entries.splice(i, 1);
-            }
-        }
-
-        return {
-            entries: entries
-        };
+    var filterIn = function (entries) {
+        return entries.filter(function (entry) {
+            return values.includes(entry[property]);
+        });
     };
+    filterIn.priority = QUERY_PRIORITY[filterIn.name];
+
+    return filterIn;
 };
 
 /**
@@ -140,15 +89,14 @@ exports.filterIn = function (property, values) {
  * @returns {Function}
  */
 exports.sortBy = function (property, order) {
-    return function (entries) {
-        entries.sort(function (a, b) {
+    var sortBy = function (entries) {
+        return entries.sort(function (a, b) {
             return order === 'asc' ? a[property] > b[property] : a[property] < b[property];
         });
-
-        return {
-            entries: entries
-        };
     };
+    sortBy.priority = QUERY_PRIORITY[sortBy.name];
+
+    return sortBy;
 };
 
 /**
@@ -158,15 +106,16 @@ exports.sortBy = function (property, order) {
  * @returns {Function}
  */
 exports.format = function (property, formatter) {
-    return function (entries) {
-        return {
-            format: {
-                property: property,
-                formatter: formatter
-            },
-            entries: entries
-        };
+    var format = function (entries) {
+        entries.forEach(function (entry) {
+            entry[property] = formatter(entry[property]);
+        });
+
+        return entries;
     };
+    format.priority = QUERY_PRIORITY[format.name];
+
+    return format;
 };
 
 /**
@@ -175,12 +124,12 @@ exports.format = function (property, formatter) {
  * @returns {Function}
  */
 exports.limit = function (count) {
-    return function limit(entries) {
-        return {
-            limit: count,
-            entries: entries
-        };
+    var limit = function (entries) {
+        return entries.slice(0, count);
     };
+    limit.priority = QUERY_PRIORITY[limit.name];
+
+    return limit;
 };
 
 if (exports.isStar) {
@@ -194,20 +143,16 @@ if (exports.isStar) {
     exports.or = function () {
         var queries = [].slice.call(arguments);
 
-        return function (entries) {
-            var result = [];
-            var copy = Object.assign([], entries);
-
-            queries.forEach(function (query) {
-                entries = Object.assign([], copy);
-
-                result = result.concat(query(entries).entries);
+        var or = function (entries) {
+            return entries.filter(function (entry) {
+                return queries.some(function (query) {
+                    return query(entries).includes(entry);
+                });
             });
-
-            return {
-                entries: result
-            };
         };
+        or.priority = QUERY_PRIORITY[or.name];
+
+        return or;
     };
 
     /**
@@ -219,14 +164,15 @@ if (exports.isStar) {
     exports.and = function () {
         var queries = [].slice.call(arguments);
 
-        return function (entries) {
-            var result = {};
-
-            queries.forEach(function (query) {
-                result.entries = query(entries).entries;
+        var and = function (entries) {
+            return entries.filter(function (entry) {
+                return queries.every(function (query) {
+                    return query(entries).includes(entry);
+                });
             });
-
-            return result;
         };
+        and.priority = QUERY_PRIORITY[and.name];
+
+        return and;
     };
 }
