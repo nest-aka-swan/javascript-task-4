@@ -60,7 +60,7 @@ exports.select = function () {
             return result;
         });
     };
-    select.priority = QUERY_PRIORITY[select.name];
+    select.priority = QUERY_PRIORITY.select;
 
     return select;
 };
@@ -77,7 +77,7 @@ exports.filterIn = function (property, values) {
             return values.includes(entry[property]);
         });
     };
-    filterIn.priority = QUERY_PRIORITY[filterIn.name];
+    filterIn.priority = QUERY_PRIORITY.filterIn;
 
     return filterIn;
 };
@@ -94,7 +94,7 @@ exports.sortBy = function (property, order) {
             return order === 'asc' ? a[property] > b[property] : a[property] < b[property];
         });
     };
-    sortBy.priority = QUERY_PRIORITY[sortBy.name];
+    sortBy.priority = QUERY_PRIORITY.sortBy;
 
     return sortBy;
 };
@@ -113,7 +113,7 @@ exports.format = function (property, formatter) {
 
         return entries;
     };
-    format.priority = QUERY_PRIORITY[format.name];
+    format.priority = QUERY_PRIORITY.format;
 
     return format;
 };
@@ -127,7 +127,7 @@ exports.limit = function (count) {
     var limit = function (entries) {
         return entries.slice(0, count);
     };
-    limit.priority = QUERY_PRIORITY[limit.name];
+    limit.priority = QUERY_PRIORITY.limit;
 
     return limit;
 };
@@ -150,7 +150,7 @@ if (exports.isStar) {
                 });
             });
         };
-        or.priority = QUERY_PRIORITY[or.name];
+        or.priority = QUERY_PRIORITY.or;
 
         return or;
     };
@@ -171,7 +171,7 @@ if (exports.isStar) {
                 });
             });
         };
-        and.priority = QUERY_PRIORITY[and.name];
+        and.priority = QUERY_PRIORITY.and;
 
         return and;
     };
